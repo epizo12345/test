@@ -14,6 +14,7 @@ namespace PrivateLeatherConsolidator
 
         private static LeatherConsolidatorSettingsDef settings;
         private static HashSet<ThingDef> animalLeathers;
+        private static HashSet<ThingDef> humanlikeLeathers;
 
         static LeatherConsolidatorBootstrap()
         {
@@ -40,6 +41,7 @@ namespace PrivateLeatherConsolidator
                 ThingDef heavy = DefDatabase<ThingDef>.GetNamedSilentFail("Leather_Heavy");
                 ThingDef bird = DefDatabase<ThingDef>.GetNamedSilentFail("Leather_Bird");
                 ThingDef lizard = DefDatabase<ThingDef>.GetNamedSilentFail("Leather_Lizard");
+                ThingDef human = DefDatabase<ThingDef>.GetNamedSilentFail("Leather_Human");
 
                 var targets = new List<ThingDef> { light, plain, heavy, bird, lizard }
                     .Where(x => x != null)
@@ -56,20 +58,32 @@ namespace PrivateLeatherConsolidator
                     .Where(x => x?.race?.leatherDef != null)
                     .Select(x => x.race.leatherDef));
 
+                humanlikeLeathers = new HashSet<ThingDef>(allThings
+                    .Where(x => x?.race?.Humanlike == true && x.race.leatherDef != null)
+                    .Select(x => x.race.leatherDef));
+
                 BuildProtectedSet(targets);
-                BuildReplacementMap(targets);
+                BuildReplacementMap(targets, human);
                 ApplyOverrides();
 
                 int animalCount = RemapAnimalLeatherDefs(allThings);
                 int recipeCount = RemapRecipes(allRecipes);
                 int categoryCount = HideMergedLeathersFromGeneralLeatherFilters();
+                int humanlikeCount = human != null
+                    ? ReplacementMap.Count(x => x.Value == human && humanlikeLeathers.Contains(x.Key))
+                    : 0;
 
-                Log.Message($"[革統合] 完了: 動物革 {animalLeathers.Count} / 統合 {ReplacementMap.Count} / 保護 {ProtectedLeathers.Count} / 動物変更 {animalCount} / レシピ補正 {recipeCount} / 旧革Leathery除外 {categoryCount}");
+                Log.Message($"[革統合] 完了: 動物革 {animalLeathers.Count} / 人型由来革 {humanlikeLeathers.Count} / 人皮統合 {humanlikeCount} / 統合 {ReplacementMap.Count} / 保護 {ProtectedLeathers.Count} / 動物変更 {animalCount} / レシピ補正 {recipeCount} / 旧革Leathery除外 {categoryCount}");
 
                 if (settings == null || settings.verboseLog)
                 {
                     foreach (var pair in ReplacementMap.OrderBy(x => x.Key.defName))
-                        Log.Message($"[革統合] {pair.Key.defName} ({pair.Key.label}) -> {pair.Value.defName} ({pair.Value.label})");
+                    {
+                        string reason = human != null && pair.Value == human && humanlikeLeathers.Contains(pair.Key)
+                            ? " [人型種族→人皮]"
+                            : string.Empty;
+                        Log.Message($"[革統合] {pair.Key.defName} ({pair.Key.label}) -> {pair.Value.defName} ({pair.Value.label}){reason}");
+                    }
                 }
             }
             catch (Exception ex)
@@ -123,7 +137,7 @@ namespace PrivateLeatherConsolidator
                 ProtectedLeathers.Add(def);
         }
 
-        private static void BuildReplacementMap(List<ThingDef> targets)
+        private static void BuildReplacementMap(List<ThingDef> targets, ThingDef humanLeather)
         {
             foreach (ThingDef leather in animalLeathers)
             {
@@ -131,6 +145,16 @@ namespace PrivateLeatherConsolidator
                     continue;
                 if (ProtectedLeathers.Contains(leather))
                     continue;
+
+                if ((settings == null || settings.mergeHumanlikeLeathersIntoHuman)
+                    && humanLeather != null
+                    && humanlikeLeathers.Contains(leather)
+                    && IsPlainLeatheryStuff(leather)
+                    && leather != humanLeather)
+                {
+                    ReplacementMap[leather] = humanLeather;
+                    continue;
+                }
 
                 ThingDef closest = targets.OrderBy(t => LeatherDistance(leather, t)).FirstOrDefault();
                 if (closest != null && closest != leather)
@@ -272,6 +296,16 @@ namespace PrivateLeatherConsolidator
                 return false;
 
             return animalLeathers != null && animalLeathers.Contains(def);
+        }
+
+        private static bool IsPlainLeatheryStuff(ThingDef def)
+        {
+            if (def?.stuffProps?.categories == null)
+                return false;
+
+            bool hasLeathery = def.stuffProps.categories.Any(c => c != null && c.defName == "Leathery");
+            bool hasOther = def.stuffProps.categories.Any(c => c != null && c.defName != "Leathery");
+            return hasLeathery && !hasOther;
         }
 
         private static bool HasNonLeatherStuffCategory(ThingDef def)
