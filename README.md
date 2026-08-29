@@ -7,25 +7,27 @@
 MODで大量に増える動物革・異種族の独自人皮を、既存の少数の革へ統合します。
 
 - 実際にどこかの種族の `race.leatherDef` として使われている革だけを自動統合候補にします。
-- Humanlikeな追加種族の通常レザーは `Leather_Human` へ統合します。
+- Humanlike専用の通常レザーは `Leather_Human` へ統合します。
+- Humanlikeと非Humanlikeが同じ革を共有している場合は、人皮へは強制しません。
 - 元の `ThingDef` 自体は削除しません。
 - 種族が今後落とす革は統合先へ変更します。
 - 特定革を要求する `RecipeDef` / `ThingFilter` は統合先へ補正します。
 - 統合済みの旧革から `StuffCategoryDef: Leathery` を外し、通常の革材料候補から消します。
-- Tick処理はありません。Def読み込み完了後に一度だけ処理します。
+- `ThingMaker.MakeThing` に軽量なHarmonyフォールバックを置き、他MODが旧革を直接生成した場合も統合先へ差し替えます。
+- Tick処理はありません。
 
 ## 人型種族の革
 
-`mergeHumanlikeLeathersIntoHuman` が `true` の場合、`race.Humanlike == true` の種族が持つ独自革は原則として `Leather_Human` に統合します。
+`mergeHumanlikeLeathersIntoHuman` が `true` の場合、その革を使っている全Raceが `Humanlike` で、かつ通常の `Leathery` 素材なら `Leather_Human` に統合します。
 
-ただし次のものは先に保護されるため、自動で人皮にはしません。
+Humanlike専用の通常人皮については、性能が高くても `protectExtremeLeathers` より人皮統合を優先します。
+
+ただし次は保護します。
 
 - `Leathery` 以外のStuffCategoryも持つ素材
-- 極端に高性能な特殊素材
 - `alwaysKeep` 指定
 - overrideで保護した素材
-
-そのため、Humanlikeなロボット種族が金属など特殊カテゴリ素材を落とすケースを人皮化しにくい設計です。
+- Humanlikeと非Humanlikeで共有される革
 
 ## 自動統合先
 
@@ -37,13 +39,11 @@ MODで大量に増える動物革・異種族の独自人皮を、既存の少�
 - `Leather_Bird`
 - `Leather_Lizard`
 
-Humanlike種族の通常革:
+Humanlike専用の通常革:
 
 - `Leather_Human`
 
-分類は元革と統合先の素材性能を比較して最も近いものを選びます。
-
-比較対象:
+通常革の分類では次を比較します。
 
 - 刺突防御
 - 打撃防御
@@ -60,21 +60,35 @@ Humanlike種族の通常革:
 - `Leather_Human`
 - `Leather_Thrumbo`
 - Odyssey等のスランボ系上位革（存在する場合）
-- 極端に高性能な特殊革
+- 極端に高性能な非Humanlike特殊革
 - `Leathery` 以外のStuffCategoryも持つ特殊革
 - 設定ファイルの `alwaysKeep` に追加した革
+
+## 既存セーブ移行
+
+セーブロード後に一度だけ次を補正します。
+
+- 作業台などの既存Billが持つ材料フィルタを `旧革 -> 統合先` へ補正
+- マップ上に既に存在する生革スタックを統合先の生革へ変換
+
+既存の服・防具・家具など、旧革をStuffとして持つ完成品は変更しません。
+
+生革変換は、新しいスタックの配置に成功した後で旧スタックを削除します。配置できなかった場合は旧スタックを残します。
+
+現在の自動移行対象はマップ上にSpawnされている生革です。キャラバン・ポーン所持品・特殊コンテナ内の在庫は安全のため自動変換していません。
 
 ## 設定
 
 `Defs/LeatherConsolidatorSettings.xml` を直接編集します。
 
-### Humanlike独自革を人皮へ統合
+主なスイッチ:
 
 ```xml
 <mergeHumanlikeLeathersIntoHuman>true</mergeHumanlikeLeathersIntoHuman>
+<enableThingMakerFallback>true</enableThingMakerFallback>
+<migrateExistingBills>true</migrateExistingBills>
+<migrateExistingRawLeatherStacks>true</migrateExistingRawLeatherStacks>
 ```
-
-`false` にすると、人型種族の独自革も通常の性能分類へ回します。
 
 ### 革を必ず残す
 
@@ -110,11 +124,9 @@ Humanlike種族の通常革:
 </overrides>
 ```
 
-## 既存セーブについて
+## 依存MOD
 
-旧革Defは削除しないため、すでにマップや倉庫に存在する革がDef欠落で壊れることは避ける設計です。
-
-既存在庫そのものを強制的に別ThingDefへ変換する処理はまだ入れていません。既存スタックは残りますが、通常の `Leathery` 材料候補からは外れます。
+- Harmony (`brrainz.harmony`)
 
 ## ビルド
 
