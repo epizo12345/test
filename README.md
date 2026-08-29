@@ -14,6 +14,7 @@ MODで大量に増える動物革・異種族の独自人皮を、既存の少�
 - 特定革を要求・生成するRecipe、建築コスト、解体/破壊生成物、毛刈り等の既知参照を統合先へ補正します。
 - `ThingMaker.MakeThing` に軽量なHarmonyフォールバックを置き、他MODが旧革を直接生成した場合も統合先へ差し替えます。
 - 統合後にStuff/Apparel/Weapon生成キャッシュを再構築します。
+- 本MOD独自の革ThingDefは追加しません。
 - Tick処理はありません。
 
 ## 自動分類
@@ -48,11 +49,8 @@ Humanlike専用の通常革は `Leather_Human` へ統合します。
 - `Leather_Thrumbo`
 - Odyssey等のスランボ系上位革（存在する場合）
 - 極端に高性能な非Humanlike特殊革
-- `Leathery` 以外のStuffCategoryも持つ特殊革
+- `Leathery` / `Fabric` 以外のStuffCategoryを持つ特殊素材
 - `alwaysKeep` に指定した革
-
-旧 Optimization: Leathers の `Leather_Chitin` / `Leather_DragonScale` はLegacy互換用に保持します。
-`Leather_Legend` の生革は `Leather_Thrumbo` へ移行します。
 
 ## 直接参照の補正
 
@@ -89,17 +87,7 @@ Humanlike専用の通常革は `Leather_Human` へ統合します。
 
 マップ上の生革変換は `GenPlace` が一部だけ配置できた場合も、実際に変換できた数量だけ旧スタックから減らします。部分失敗で革が複製されないようにしています。
 
-## 旧 Optimization: Leathers からの移行
-
-旧MODのpackageId `Scorpio.OptimizationLeathers` とは同時使用不可にしています。
-
-既存セーブを読み込むため、次の旧Def名をLegacy互換Defとして保持します。
-
-- `Leather_Legend`
-- `Leather_Chitin`
-- `Leather_DragonScale`
-
-旧MODを無効化して本MODへ差し替える場合でも、これらを使った既存完成品がDef欠落しないことを目的としています。
+本MODは旧 Optimization: Leathers のセーブ互換Defを持ちません。旧MOD由来の独自革を含む既存セーブを引き継ぐ用途は対象外です。
 
 ## 設定
 
@@ -144,6 +132,8 @@ overrideは最終統合先まで正規化します。循環（A→B、B→Aな�
 ## 依存MOD
 
 - Harmony (`brrainz.harmony`)
+
+旧 Optimization: Leathers (`Scorpio.OptimizationLeathers`) とは同時使用しないでください。
 
 ## ビルド
 
