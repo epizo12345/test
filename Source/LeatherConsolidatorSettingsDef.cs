@@ -9,6 +9,9 @@ namespace PrivateLeatherConsolidator
         public bool mergeHumanlikeLeathersIntoHuman = true;
         public bool protectExtremeLeathers = true;
         public bool protectMultiCategoryLeathers = true;
+        public bool enableThingMakerFallback = true;
+        public bool migrateExistingBills = true;
+        public bool migrateExistingRawLeatherStacks = true;
         public bool verboseLog = true;
 
         public List<string> alwaysKeep = new List<string>();
