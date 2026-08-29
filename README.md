@@ -2,16 +2,18 @@
 
 自分用のRimWorld 1.6専用MODです。
 
-## 方針
+## 目的
 
-- MODで増えた一般的な革を、既存の少数の革へ統合する。
-- 人皮・スランボ系・極端な性能を持つ特殊革は保護する。
-- 動物の `race.leatherDef` を起動時に一度だけ統合先へ変更する。
-- 特定の革を要求する `RecipeDef` / `ThingFilter` は統合先へ補正する。
-- 元の `ThingDef` 自体は削除しない。既存セーブや他MODとの互換性を優先する。
-- Tick処理は行わない。
+MODで大量に増える動物革を、既存の少数の革へ統合します。
 
-## 現在の統合先
+- 実際にどこかの種族の `race.leatherDef` として使われている革だけを自動統合候補にします。
+- 元の `ThingDef` 自体は削除しません。
+- 動物が今後落とす革は統合先へ変更します。
+- 特定革を要求する `RecipeDef` / `ThingFilter` は統合先へ補正します。
+- 統合済みの旧革から `StuffCategoryDef: Leathery` を外し、通常の革材料候補から消します。
+- Tick処理はありません。Def読み込み完了後に一度だけ処理します。
+
+## 自動統合先
 
 - `Leather_Light`
 - `Leather_Plain`
@@ -19,17 +21,73 @@
 - `Leather_Bird`
 - `Leather_Lizard`
 
+分類は元革と統合先の素材性能を比較して最も近いものを選びます。
+
+比較対象:
+
+- 刺突防御
+- 打撃防御
+- 熱防御
+- 最大HP倍率
+- 防寒
+- 防暑
+- 市場価値
+
 ## 常時保護
+
+以下は自動統合しません。
 
 - `Leather_Human`
 - `Leather_Thrumbo`
 - Odyssey等のスランボ系上位革（存在する場合）
-- 市場価値・防御・耐久が極端に高い特殊革
+- 極端に高性能な特殊革
+- `Leathery` 以外のStuffCategoryも持つ特殊革
+- 設定ファイルの `alwaysKeep` に追加した革
+
+## 設定
+
+`Defs/LeatherConsolidatorSettings.xml` を直接編集します。
+
+### 革を必ず残す
+
+```xml
+<alwaysKeep>
+  <li>Leather_Human</li>
+  <li>Leather_Thrumbo</li>
+  <li>SomeMod_SpecialLeather</li>
+</alwaysKeep>
+```
+
+### 統合先を手動指定
+
+```xml
+<overrides>
+  <li>
+    <source>SomeMod_WolfLeather</source>
+    <target>Leather_Heavy</target>
+  </li>
+</overrides>
+```
+
+### overrideで保護する
+
+`target` を空にするとその革を統合対象外にします。
+
+```xml
+<overrides>
+  <li>
+    <source>SomeMod_DragonLeather</source>
+    <target></target>
+  </li>
+</overrides>
+```
+
+## 既存セーブについて
+
+旧革Defは削除しないため、すでにマップや倉庫に存在する革がDef欠落で壊れることは避ける設計です。
+
+既存在庫そのものを強制的に別ThingDefへ変換する処理はまだ入れていません。既存スタックは残りますが、通常の `Leathery` 材料候補からは外れます。
 
 ## ビルド
 
 GitHub ActionsでRimWorld 1.6向けDLLをビルドします。成功すると `LeatherConsolidator-RimWorld-1.6` artifact が生成されます。
-
-## 注意
-
-初期版です。RimWorld 1.6 APIとの整合性はGitHub Actionsのコンパイル結果を基準に修正します。
