@@ -19,5 +19,5 @@
   <incompatibleWith>
     <li>Scorpio.OptimizationLeathers</li>
   </incompatibleWith>
-  <description>RimWorld 1.6専用。MODで増えた一般的な革を既存の少数の革へ統合し、特定革指定レシピや直接参照も統合先へ補正します。追加Humanlike種族の通常人皮はバニラ人皮へ統合。旧 Optimization: Leathers の既存セーブ用Legacy Defを含みます。</description>
+  <description>RimWorld 1.6専用。MODで増えた一般的な革を既存の少数の革へ統合し、特定革指定レシピや直接参照も統合先へ補正します。追加Humanlike種族の通常人皮はバニラ人皮へ統合します。本MOD独自の革ThingDefは追加しません。</description>
 </ModMetaData>
