@@ -12,6 +12,8 @@ namespace PrivateLeatherConsolidator
         public bool enableThingMakerFallback = true;
         public bool migrateExistingBills = true;
         public bool migrateExistingRawLeatherStacks = true;
+        public bool migrateHeldRawLeatherStacks = true;
+        public bool auditRemainingReferences = true;
         public bool verboseLog = true;
 
         public List<string> alwaysKeep = new List<string>();
