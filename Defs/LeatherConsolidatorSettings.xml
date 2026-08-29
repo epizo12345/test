@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <PrivateLeatherConsolidator.LeatherConsolidatorSettingsDef>
+    <defName>LeatherConsolidator_DefaultSettings</defName>
+    <removeLeatheryCategoryFromMergedLeathers>true</removeLeatheryCategoryFromMergedLeathers>
+    <protectExtremeLeathers>true</protectExtremeLeathers>
+    <protectMultiCategoryLeathers>true</protectMultiCategoryLeathers>
+    <verboseLog>true</verboseLog>
+    <alwaysKeep>
+      <li>Leather_Human</li>
+      <li>Leather_Thrumbo</li>
+      <li>Thrumbomane</li>
+      <li>Leather_Thrumbomane</li>
+    </alwaysKeep>
+    <overrides />
+  </PrivateLeatherConsolidator.LeatherConsolidatorSettingsDef>
+</Defs>
