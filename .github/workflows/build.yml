@@ -18,6 +18,25 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
+      - name: Validate XML
+        shell: pwsh
+        run: |
+          $files = @(
+            'About/About.xml',
+            'Defs/LeatherConsolidatorSettings.xml',
+            'Defs/LegacyOptimizationLeathers.xml'
+          )
+          foreach ($file in $files) {
+            try {
+              [xml](Get-Content -Raw -Encoding UTF8 $file) | Out-Null
+              Write-Host "XML OK: $file"
+            }
+            catch {
+              Write-Error "Invalid XML: $file`n$_"
+              exit 1
+            }
+          }
+
       - name: Restore
         run: dotnet restore Source/LeatherConsolidator.csproj
 
