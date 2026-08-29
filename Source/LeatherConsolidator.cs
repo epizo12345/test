@@ -73,7 +73,6 @@ namespace PrivateLeatherConsolidator
 
                 BuildProtectedSet(targets, human);
                 BuildReplacementMap(targets, human);
-                AddLegacyMappings();
                 ApplyOverrides();
                 NormalizeReplacementMap();
 
@@ -171,9 +170,7 @@ namespace PrivateLeatherConsolidator
                 "Leather_Thrumbo",
                 "Leather_AlphaThrumbo",
                 "Thrumbomane",
-                "Leather_Thrumbomane",
-                "Leather_Chitin",
-                "Leather_DragonScale"
+                "Leather_Thrumbomane"
             };
 
             foreach (string name in defaultProtected)
@@ -258,14 +255,6 @@ namespace PrivateLeatherConsolidator
                 if (closest != null && closest != leather)
                     ReplacementMap[leather] = closest;
             }
-        }
-
-        private static void AddLegacyMappings()
-        {
-            ThingDef legacyLegend = DefDatabase<ThingDef>.GetNamedSilentFail("Leather_Legend");
-            ThingDef thrumbo = DefDatabase<ThingDef>.GetNamedSilentFail("Leather_Thrumbo");
-            if (legacyLegend != null && thrumbo != null && !ProtectedLeathers.Contains(legacyLegend))
-                ReplacementMap[legacyLegend] = thrumbo;
         }
 
         private static void ApplyOverrides()
