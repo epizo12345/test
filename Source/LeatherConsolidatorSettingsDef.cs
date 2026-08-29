@@ -6,6 +6,7 @@ namespace PrivateLeatherConsolidator
     public sealed class LeatherConsolidatorSettingsDef : Def
     {
         public bool removeLeatheryCategoryFromMergedLeathers = true;
+        public bool mergeHumanlikeLeathersIntoHuman = true;
         public bool protectExtremeLeathers = true;
         public bool protectMultiCategoryLeathers = true;
         public bool verboseLog = true;
