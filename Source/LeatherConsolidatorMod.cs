@@ -33,15 +33,17 @@ namespace PrivateLeatherConsolidator
                 listing.Label("設定Def: 読込済み");
                 listing.Label($"Humanlike専用革を人皮へ統合: {settings.mergeHumanlikeLeathersIntoHuman}");
                 listing.Label($"特殊高性能革を保護: {settings.protectExtremeLeathers}");
-                listing.Label($"複数StuffCategory革を保護: {settings.protectMultiCategoryLeathers}");
+                listing.Label($"特殊StuffCategory革を保護: {settings.protectMultiCategoryLeathers}");
                 listing.Label($"ThingMakerフォールバック: {settings.enableThingMakerFallback}");
                 listing.Label($"既存Bill移行: {settings.migrateExistingBills}");
                 listing.Label($"既存生革移行: {settings.migrateExistingRawLeatherStacks}");
             }
 
             listing.GapLine();
+            listing.Label($"検出した生産革候補: {LeatherConsolidatorBootstrap.CandidateLeatherCount} 件");
             listing.Label($"現在の置換マップ: {LeatherConsolidatorBootstrap.ReplacementMap.Count} 件");
             listing.Label($"現在の保護革: {LeatherConsolidatorBootstrap.ProtectedLeathers.Count} 件");
+            listing.Label("保護理由の詳細は Player.log の [革統合][保護] を確認できます。");
             listing.Gap();
             listing.Label("設定値の変更は Defs/LeatherConsolidatorSettings.xml を編集後、RimWorldを再起動してください。");
 
