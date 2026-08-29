@@ -64,7 +64,7 @@ namespace PrivateLeatherConsolidator
                 int recipeCount = RemapRecipes(allRecipes);
                 int categoryCount = HideMergedLeathersFromGeneralLeatherFilters();
 
-                Log.Message($"[革統合] 完了: 動物革 {animalLeathers.Count} / 統合 {ReplacementMap.Count} / 保護 {ProtectedLeathers.Count} / 動物変更 {animalCount} / レシピ補正 {recipeCount} / 旧革カテゴリ除外 {categoryCount}");
+                Log.Message($"[革統合] 完了: 動物革 {animalLeathers.Count} / 統合 {ReplacementMap.Count} / 保護 {ProtectedLeathers.Count} / 動物変更 {animalCount} / レシピ補正 {recipeCount} / 旧革Leathery除外 {categoryCount}");
 
                 if (settings == null || settings.verboseLog)
                 {
@@ -247,17 +247,20 @@ namespace PrivateLeatherConsolidator
             if (settings != null && !settings.removeLeatheryCategoryFromMergedLeathers)
                 return 0;
 
-            ThingCategoryDef leathery = DefDatabase<ThingCategoryDef>.GetNamedSilentFail("Leathery");
+            StuffCategoryDef leathery = DefDatabase<StuffCategoryDef>.GetNamedSilentFail("Leathery");
             if (leathery == null)
+            {
+                Log.Warning("[革統合] StuffCategoryDef 'Leathery' が見つからないため旧革カテゴリ除外を省略します。");
                 return 0;
+            }
 
             int count = 0;
             foreach (ThingDef oldLeather in ReplacementMap.Keys)
             {
-                if (oldLeather?.thingCategories == null)
+                if (oldLeather?.stuffProps?.categories == null)
                     continue;
 
-                if (oldLeather.thingCategories.Remove(leathery))
+                if (oldLeather.stuffProps.categories.Remove(leathery))
                     count++;
             }
             return count;
@@ -287,10 +290,10 @@ namespace PrivateLeatherConsolidator
             float market = def.BaseMarketValue;
             float sharp = GetStuffFactor(def, StatDefOf.ArmorRating_Sharp, 1f);
             float blunt = GetStuffFactor(def, StatDefOf.ArmorRating_Blunt, 1f);
-            float heat = GetStuffFactor(def, StatDefOf.ArmorRating_Heat, 1f);
+            float heatArmor = GetStuffFactor(def, StatDefOf.ArmorRating_Heat, 1f);
             float hp = GetStuffFactor(def, StatDefOf.MaxHitPoints, 1f);
 
-            return market >= 25f || sharp >= 2.4f || blunt >= 2.0f || heat >= 2.0f || hp >= 2.5f;
+            return market >= 25f || sharp >= 2.4f || blunt >= 2.0f || heatArmor >= 2.0f || hp >= 2.5f;
         }
 
         private static double LeatherDistance(ThingDef a, ThingDef b)
@@ -300,6 +303,8 @@ namespace PrivateLeatherConsolidator
             score += SqNorm(GetStuffFactor(a, StatDefOf.ArmorRating_Blunt, 1f), GetStuffFactor(b, StatDefOf.ArmorRating_Blunt, 1f), 0.60);
             score += SqNorm(GetStuffFactor(a, StatDefOf.ArmorRating_Heat, 1f), GetStuffFactor(b, StatDefOf.ArmorRating_Heat, 1f), 0.40);
             score += SqNorm(GetStuffFactor(a, StatDefOf.MaxHitPoints, 1f), GetStuffFactor(b, StatDefOf.MaxHitPoints, 1f), 0.75);
+            score += SqNorm(GetStuffFactor(a, StatDefOf.Insulation_Cold, 0f), GetStuffFactor(b, StatDefOf.Insulation_Cold, 0f), 0.004);
+            score += SqNorm(GetStuffFactor(a, StatDefOf.Insulation_Heat, 0f), GetStuffFactor(b, StatDefOf.Insulation_Heat, 0f), 0.006);
             score += SqNorm(a.BaseMarketValue, b.BaseMarketValue, 0.08);
             return score;
         }
