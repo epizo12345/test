@@ -3,12 +3,12 @@ using Verse;
 
 namespace PrivateLeatherConsolidator
 {
-    [StaticConstructorOnStartup]
-    public static class RuntimePatches
+    [HarmonyPatch(typeof(LeatherConsolidatorBootstrap), "Initialize")]
+    public static class BootstrapInitializeSettingsPatch
     {
-        static RuntimePatches()
+        public static void Prefix()
         {
-            new Harmony("epizo12345.LeatherConsolidator").PatchAll();
+            LeatherConsolidatorMod.ApplyPersistentSettingsToRuntimeDef();
         }
     }
 
