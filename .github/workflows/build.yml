@@ -1,0 +1,40 @@
+name: Build RimWorld 1.6 Mod
+
+on:
+  push:
+    branches:
+      - rimworld-leather-consolidator-1.6
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore Source/LeatherConsolidator.csproj
+
+      - name: Build
+        run: dotnet build Source/LeatherConsolidator.csproj -c Release --no-restore
+
+      - name: Stage mod
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifact/LeatherConsolidator/1.6/Assemblies | Out-Null
+          Copy-Item About artifact/LeatherConsolidator/About -Recurse
+          Copy-Item Assemblies/LeatherConsolidator.dll artifact/LeatherConsolidator/1.6/Assemblies/LeatherConsolidator.dll
+          Copy-Item README.md artifact/LeatherConsolidator/README.md
+
+      - name: Upload mod artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LeatherConsolidator-RimWorld-1.6
+          path: artifact/LeatherConsolidator
+          if-no-files-found: error
