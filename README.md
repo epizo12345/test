@@ -29,17 +29,7 @@ MODで大量に増える動物革・異種族の独自人皮を、既存の少�
 
 Humanlike専用の通常革は `Leather_Human` へ統合します。
 
-性能比較はRimWorldの素材用Statを直接参照します。
-
-- `StuffPower_Armor_Sharp`
-- `StuffPower_Armor_Blunt`
-- `StuffPower_Armor_Heat`
-- `StuffPower_Insulation_Cold`
-- `StuffPower_Insulation_Heat`
-- 最大HP倍率
-- 市場価値
-
-各項目を正規化して比較するため、市場価値だけで統合先が決まりにくいようにしています。
+性能比較には素材用Stat、防寒・防暑、最大HP倍率、市場価値を使い、各項目を正規化して比較します。
 
 ## 保護対象
 
@@ -47,10 +37,10 @@ Humanlike専用の通常革は `Leather_Human` へ統合します。
 
 - `Leather_Human`
 - `Leather_Thrumbo`
-- Odyssey等のスランボ系上位革（存在する場合）
-- 極端に高性能な非Humanlike特殊革
-- `Leathery` / `Fabric` 以外のStuffCategoryを持つ特殊素材
-- `alwaysKeep` に指定した革
+- Odyssey等のスランボ系上位革
+- 通常5革の性能範囲を大きく超える特殊革
+- `Leathery` / `Fabric` 以外の特殊StuffCategoryを持つ素材
+- ゲーム内設定で「常時保護」に指定した革
 
 ## 直接参照の補正
 
@@ -87,47 +77,30 @@ Humanlike専用の通常革は `Leather_Human` へ統合します。
 
 マップ上の生革変換は `GenPlace` が一部だけ配置できた場合も、実際に変換できた数量だけ旧スタックから減らします。部分失敗で革が複製されないようにしています。
 
-本MODは旧 Optimization: Leathers のセーブ互換Defを持ちません。旧MOD由来の独自革を含む既存セーブを引き継ぐ用途は対象外です。
+## ゲーム内設定
 
-## 設定
+RimWorldの **オプション → MOD設定 → 革統合 - 1.6** から設定します。
 
-`Defs/LeatherConsolidatorSettings.xml` を直接編集します。
+主な設定:
 
-主なスイッチ:
+- Humanlike専用革を人皮へ統合
+- 特殊高性能革を自動保護
+- 特殊StuffCategory革を自動保護
+- 統合済み旧革をLeatheryカテゴリから外す
+- ThingMaker生成時フォールバック
+- 既存Bill / 生革 / 所持品等の移行
+- 未解決参照監査
+- 詳細ログ
+- 常時保護する革の追加・削除
+- 手動統合 `source → target` の追加・削除
+- 現在の置換一覧
+- 現在の保護一覧と保護理由
 
-```xml
-<mergeHumanlikeLeathersIntoHuman>true</mergeHumanlikeLeathersIntoHuman>
-<enableThingMakerFallback>true</enableThingMakerFallback>
-<migrateExistingBills>true</migrateExistingBills>
-<migrateExistingRawLeatherStacks>true</migrateExistingRawLeatherStacks>
-<migrateHeldRawLeatherStacks>true</migrateHeldRawLeatherStacks>
-<auditRemainingReferences>true</auditRemainingReferences>
-```
+現在の置換一覧では、統合されている革を **「保護に追加」** ボタンで次回起動から保護できます。
 
-### 革を必ず残す
+設定はRimWorld標準のModSettingsへ保存されます。Defの統合処理は起動時に一度だけ行うため、設定変更後はRimWorldを再起動してください。
 
-```xml
-<alwaysKeep>
-  <li>Leather_Human</li>
-  <li>Leather_Thrumbo</li>
-  <li>SomeMod_SpecialLeather</li>
-</alwaysKeep>
-```
-
-### 統合先を手動指定
-
-```xml
-<overrides>
-  <li>
-    <source>SomeMod_WolfLeather</source>
-    <target>Leather_Heavy</target>
-  </li>
-</overrides>
-```
-
-`target` を空にするか、sourceと同じDefを指定すると、その革を保護します。
-
-overrideは最終統合先まで正規化します。循環（A→B、B→Aなど）を検出した場合は警告を出し、その置換を無効化します。
+`Defs/LeatherConsolidatorSettings.xml` は内部のランタイム用Defであり、ユーザーが編集する必要はありません。
 
 ## 依存MOD
 
@@ -146,4 +119,4 @@ CIでは次を確認します。
 - MODフォルダ形式へのステージング
 - `LeatherConsolidator-RimWorld-1.6` artifact生成
 
-RimWorld本体を起動したDef解決テストまではGitHub Actionsでは行わないため、最終確認は実ゲームの起動ログで行います。
+RimWorld本体を起動したDef解決・UI操作テストまではGitHub Actionsでは行わないため、最終確認は実ゲームで行います。
