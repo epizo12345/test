@@ -1,9 +1,28 @@
 using System.Collections.Generic;
+using System.Linq;
 using Verse;
 
 namespace PrivateLeatherConsolidator
 {
-    public sealed class LeatherConsolidatorSettings : ModSettings
+    // Internal runtime config populated from the user's ModSettings before consolidation starts.
+    public sealed class LeatherConsolidatorSettingsDef : Def
+    {
+        public bool removeLeatheryCategoryFromMergedLeathers = true;
+        public bool mergeHumanlikeLeathersIntoHuman = true;
+        public bool protectExtremeLeathers = true;
+        public bool protectMultiCategoryLeathers = true;
+        public bool enableThingMakerFallback = true;
+        public bool migrateExistingBills = true;
+        public bool migrateExistingRawLeatherStacks = true;
+        public bool migrateHeldRawLeatherStacks = true;
+        public bool auditRemainingReferences = true;
+        public bool verboseLog = true;
+
+        public List<string> alwaysKeep = new List<string>();
+        public List<LeatherOverrideEntry> overrides = new List<LeatherOverrideEntry>();
+    }
+
+    public sealed class LeatherConsolidatorModSettings : ModSettings
     {
         public bool removeLeatheryCategoryFromMergedLeathers = true;
         public bool mergeHumanlikeLeathersIntoHuman = true;
@@ -35,15 +54,27 @@ namespace PrivateLeatherConsolidator
             Scribe_Collections.Look(ref overrides, "overrides", LookMode.Deep);
 
             if (Scribe.mode == LoadSaveMode.PostLoadInit)
-            {
-                if (alwaysKeep == null)
-                    alwaysKeep = new List<string>();
-                if (overrides == null)
-                    overrides = new List<LeatherOverrideEntry>();
+                Sanitize();
+        }
 
-                alwaysKeep.RemoveAll(x => string.IsNullOrWhiteSpace(x));
-                overrides.RemoveAll(x => x == null || string.IsNullOrWhiteSpace(x.source));
-            }
+        public void ApplyTo(LeatherConsolidatorSettingsDef target)
+        {
+            if (target == null)
+                return;
+
+            Sanitize();
+            target.removeLeatheryCategoryFromMergedLeathers = removeLeatheryCategoryFromMergedLeathers;
+            target.mergeHumanlikeLeathersIntoHuman = mergeHumanlikeLeathersIntoHuman;
+            target.protectExtremeLeathers = protectExtremeLeathers;
+            target.protectMultiCategoryLeathers = protectMultiCategoryLeathers;
+            target.enableThingMakerFallback = enableThingMakerFallback;
+            target.migrateExistingBills = migrateExistingBills;
+            target.migrateExistingRawLeatherStacks = migrateExistingRawLeatherStacks;
+            target.migrateHeldRawLeatherStacks = migrateHeldRawLeatherStacks;
+            target.auditRemainingReferences = auditRemainingReferences;
+            target.verboseLog = verboseLog;
+            target.alwaysKeep = new List<string>(alwaysKeep);
+            target.overrides = overrides.Select(x => new LeatherOverrideEntry(x.source, x.target)).ToList();
         }
 
         public void ResetToDefaults()
@@ -60,6 +91,27 @@ namespace PrivateLeatherConsolidator
             verboseLog = true;
             alwaysKeep.Clear();
             overrides.Clear();
+        }
+
+        public void Sanitize()
+        {
+            if (alwaysKeep == null)
+                alwaysKeep = new List<string>();
+            if (overrides == null)
+                overrides = new List<LeatherOverrideEntry>();
+
+            alwaysKeep = alwaysKeep
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x.Trim())
+                .Distinct()
+                .ToList();
+
+            overrides.RemoveAll(x => x == null);
+            foreach (LeatherOverrideEntry entry in overrides)
+            {
+                entry.source = (entry.source ?? string.Empty).Trim();
+                entry.target = (entry.target ?? string.Empty).Trim();
+            }
         }
     }
 
