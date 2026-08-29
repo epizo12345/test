@@ -1,13 +1,16 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
-using HarmonyLib;
 using RimWorld;
+using RimWorld.Planet;
 using Verse;
 
 namespace PrivateLeatherConsolidator
 {
     public sealed class LeatherConsolidatorGameComponent : GameComponent
     {
+        private static readonly List<Thing> tmpHeldThings = new List<Thing>();
+
         public LeatherConsolidatorGameComponent(Game game)
         {
         }
@@ -24,7 +27,8 @@ namespace PrivateLeatherConsolidator
             {
                 LeatherConsolidatorSettingsDef settings = LeatherConsolidatorBootstrap.Settings;
                 int billChanges = 0;
-                int stackChanges = 0;
+                int mapStackChanges = 0;
+                int heldStackChanges = 0;
 
                 foreach (Map map in Current.Game.Maps)
                 {
@@ -32,10 +36,16 @@ namespace PrivateLeatherConsolidator
                         billChanges += MigrateBills(map);
 
                     if (settings == null || settings.migrateExistingRawLeatherStacks)
-                        stackChanges += MigrateRawLeatherStacks(map);
+                        mapStackChanges += MigrateSpawnedRawLeatherStacks(map);
+
+                    if (settings == null || settings.migrateHeldRawLeatherStacks)
+                        heldStackChanges += MigrateHeldThingsOnMap(map);
                 }
 
-                Log.Message($"[革統合] 既存セーブ移行: Bill補正 {billChanges} / 生革スタック変換 {stackChanges}");
+                if (settings == null || settings.migrateHeldRawLeatherStacks)
+                    heldStackChanges += MigrateCaravanHeldThings();
+
+                Log.Message($"[革統合] 既存セーブ移行: Bill補正 {billChanges} / マップ生革 {mapStackChanges} / 所持・コンテナ生革 {heldStackChanges}");
             }
             catch (Exception ex)
             {
@@ -54,8 +64,7 @@ namespace PrivateLeatherConsolidator
 
                 foreach (Bill bill in billGiver.BillStack.Bills)
                 {
-                    ThingFilter filter = GetBillIngredientFilter(bill);
-                    if (filter != null && LeatherConsolidatorBootstrap.RemapFilter(filter))
+                    if (bill?.ingredientFilter != null && LeatherConsolidatorBootstrap.RemapFilter(bill.ingredientFilter))
                         changed++;
                 }
             }
@@ -63,50 +72,122 @@ namespace PrivateLeatherConsolidator
             return changed;
         }
 
-        private static ThingFilter GetBillIngredientFilter(Bill bill)
-        {
-            if (bill == null)
-                return null;
-
-            var property = AccessTools.Property(bill.GetType(), "ingredientFilter");
-            if (property != null && typeof(ThingFilter).IsAssignableFrom(property.PropertyType))
-                return property.GetValue(bill, null) as ThingFilter;
-
-            var field = AccessTools.Field(bill.GetType(), "ingredientFilter");
-            if (field != null && typeof(ThingFilter).IsAssignableFrom(field.FieldType))
-                return field.GetValue(bill) as ThingFilter;
-
-            return null;
-        }
-
-        private static int MigrateRawLeatherStacks(Map map)
+        private static int MigrateSpawnedRawLeatherStacks(Map map)
         {
             int changed = 0;
 
             foreach (Thing oldThing in map.listerThings.AllThings.ToList())
             {
-                if (oldThing == null || oldThing.Destroyed || !oldThing.Spawned)
+                if (oldThing == null || oldThing.Destroyed || !oldThing.Spawned || oldThing.Stuff != null)
                     continue;
 
-                if (!LeatherConsolidatorBootstrap.ReplacementMap.TryGetValue(oldThing.def, out ThingDef replacementDef))
+                if (!LeatherConsolidatorBootstrap.TryGetReplacement(oldThing.def, out ThingDef replacementDef))
                     continue;
 
-                if (oldThing.Stuff != null)
-                    continue;
-
-                int stackCount = oldThing.stackCount;
+                int originalCount = oldThing.stackCount;
                 Thing replacement = ThingMaker.MakeThing(replacementDef);
-                replacement.stackCount = stackCount;
+                replacement.stackCount = originalCount;
+                int placedCount = 0;
 
-                if (!GenPlace.TryPlaceThing(replacement, oldThing.Position, map, ThingPlaceMode.Near))
-                {
+                GenPlace.TryPlaceThing(
+                    replacement,
+                    oldThing.Position,
+                    map,
+                    ThingPlaceMode.Near,
+                    (placed, count) => placedCount += count);
+
+                if (!replacement.Destroyed && !replacement.Spawned)
                     replacement.Destroy(DestroyMode.Vanish);
-                    Log.Warning($"[革統合] 既存在庫の変換先を配置できませんでした: {oldThing.def.defName} x{stackCount}");
+
+                if (placedCount <= 0)
+                {
+                    Log.Warning($"[革統合] 既存在庫の変換先を配置できませんでした: {oldThing.def.defName} x{originalCount}");
                     continue;
                 }
 
-                oldThing.Destroy(DestroyMode.Vanish);
+                int remaining = Math.Max(0, originalCount - placedCount);
+                if (remaining == 0)
+                    oldThing.Destroy(DestroyMode.Vanish);
+                else
+                    oldThing.stackCount = remaining;
+
                 changed++;
+
+                if (remaining > 0)
+                    Log.Warning($"[革統合] 既存在庫を一部だけ変換しました: {oldThing.def.defName} {originalCount - remaining}/{originalCount}");
+            }
+
+            return changed;
+        }
+
+        private static int MigrateHeldThingsOnMap(Map map)
+        {
+            tmpHeldThings.Clear();
+            ThingOwnerUtility.GetAllThingsRecursively(map, tmpHeldThings, allowUnreal: true);
+            return MigrateHeldThingList(tmpHeldThings);
+        }
+
+        private static int MigrateCaravanHeldThings()
+        {
+            int changed = 0;
+            if (Find.WorldObjects?.AllWorldObjects == null)
+                return 0;
+
+            foreach (Caravan caravan in Find.WorldObjects.AllWorldObjects.OfType<Caravan>())
+            {
+                tmpHeldThings.Clear();
+                ThingOwnerUtility.GetAllThingsRecursively(caravan, tmpHeldThings, allowUnreal: true);
+                changed += MigrateHeldThingList(tmpHeldThings);
+            }
+
+            return changed;
+        }
+
+        private static int MigrateHeldThingList(List<Thing> things)
+        {
+            int changed = 0;
+
+            foreach (Thing oldThing in things.ToList())
+            {
+                if (oldThing == null || oldThing.Destroyed || oldThing.Spawned || oldThing.Stuff != null)
+                    continue;
+
+                if (!LeatherConsolidatorBootstrap.TryGetReplacement(oldThing.def, out ThingDef replacementDef))
+                    continue;
+
+                ThingOwner owner = oldThing.holdingOwner;
+                if (owner == null)
+                    continue;
+
+                Thing replacement = ThingMaker.MakeThing(replacementDef);
+                replacement.stackCount = oldThing.stackCount;
+
+                if (owner.GetCountCanAccept(replacement, canMergeWithExistingStacks: true) < replacement.stackCount)
+                {
+                    replacement.Destroy(DestroyMode.Vanish);
+                    continue;
+                }
+
+                int oldCount = oldThing.stackCount;
+                if (!owner.Remove(oldThing))
+                {
+                    replacement.Destroy(DestroyMode.Vanish);
+                    continue;
+                }
+
+                bool added = owner.TryAdd(replacement, canMergeWithExistingStacks: true);
+                if (!added && !replacement.Destroyed)
+                {
+                    owner.TryAdd(oldThing, canMergeWithExistingStacks: false);
+                    replacement.Destroy(DestroyMode.Vanish);
+                    continue;
+                }
+
+                if (!oldThing.Destroyed)
+                    oldThing.Destroy(DestroyMode.Vanish);
+
+                changed++;
+                Log.Message($"[革統合] 所持・コンテナ生革変換: {oldThing.def.defName} x{oldCount} -> {replacementDef.defName}");
             }
 
             return changed;
