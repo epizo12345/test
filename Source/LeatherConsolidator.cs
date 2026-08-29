@@ -12,6 +12,7 @@ namespace PrivateLeatherConsolidator
     {
         public static readonly Dictionary<ThingDef, ThingDef> ReplacementMap = new Dictionary<ThingDef, ThingDef>();
         public static readonly HashSet<ThingDef> ProtectedLeathers = new HashSet<ThingDef>();
+        public static readonly Dictionary<ThingDef, string> ProtectionReasons = new Dictionary<ThingDef, string>();
 
         private static readonly Dictionary<ThingDef, HashSet<ThingDef>> ProducerRaces = new Dictionary<ThingDef, HashSet<ThingDef>>();
         private static LeatherConsolidatorSettingsDef settings;
@@ -19,6 +20,7 @@ namespace PrivateLeatherConsolidator
         private static HashSet<ThingDef> humanlikeOnlyLeathers;
 
         public static LeatherConsolidatorSettingsDef Settings => settings;
+        public static int CandidateLeatherCount => animalLeathers?.Count ?? 0;
 
         static LeatherConsolidatorBootstrap()
         {
@@ -38,6 +40,7 @@ namespace PrivateLeatherConsolidator
             {
                 ReplacementMap.Clear();
                 ProtectedLeathers.Clear();
+                ProtectionReasons.Clear();
                 ProducerRaces.Clear();
 
                 List<ThingDef> allThings = DefDatabase<ThingDef>.AllDefsListForReading;
@@ -100,6 +103,9 @@ namespace PrivateLeatherConsolidator
                             : string.Empty;
                         Log.Message($"[革統合] {pair.Key.defName} ({pair.Key.label}) -> {pair.Value.defName} ({pair.Value.label}){reason}");
                     }
+
+                    foreach (KeyValuePair<ThingDef, string> pair in ProtectionReasons.OrderBy(x => x.Key.defName))
+                        Log.Message($"[革統合][保護] {pair.Key.defName} ({pair.Key.label}): {pair.Value}");
                 }
             }
             catch (Exception ex)
@@ -157,12 +163,13 @@ namespace PrivateLeatherConsolidator
         private static void BuildProtectedSet(List<ThingDef> targets, ThingDef humanLeather)
         {
             foreach (ThingDef target in targets)
-                ProtectedLeathers.Add(target);
+                Protect(target, "統合先の基準革");
 
             string[] defaultProtected =
             {
                 "Leather_Human",
                 "Leather_Thrumbo",
+                "Leather_AlphaThrumbo",
                 "Thrumbomane",
                 "Leather_Thrumbomane",
                 "Leather_Chitin",
@@ -170,12 +177,12 @@ namespace PrivateLeatherConsolidator
             };
 
             foreach (string name in defaultProtected)
-                ProtectByName(name);
+                ProtectByName(name, "固定保護");
 
             if (settings?.alwaysKeep != null)
             {
                 foreach (string name in settings.alwaysKeep.Where(x => !string.IsNullOrWhiteSpace(x)))
-                    ProtectByName(name.Trim());
+                    ProtectByName(name.Trim(), "alwaysKeep指定");
             }
 
             foreach (ThingDef leather in animalLeathers)
@@ -183,35 +190,51 @@ namespace PrivateLeatherConsolidator
                 if (leather?.stuffProps == null)
                     continue;
 
-                bool isHumanlikePlainLeather = (settings == null || settings.mergeHumanlikeLeathersIntoHuman)
-                    && humanLeather != null
-                    && leather != humanLeather
-                    && humanlikeOnlyLeathers.Contains(leather)
-                    && IsPlainLeatheryStuff(leather);
-
-                if ((settings == null || settings.protectMultiCategoryLeathers) && HasNonLeatherStuffCategory(leather))
+                if (leather.defName.IndexOf("Thrumbo", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
-                    ProtectedLeathers.Add(leather);
+                    Protect(leather, "Thrumbo系名称");
                     continue;
                 }
 
-                if (!isHumanlikePlainLeather
-                    && (settings == null || settings.protectExtremeLeathers)
-                    && IsExtremeLeather(leather))
+                bool isHumanlikeOrdinaryLeather = (settings == null || settings.mergeHumanlikeLeathersIntoHuman)
+                    && humanLeather != null
+                    && leather != humanLeather
+                    && humanlikeOnlyLeathers.Contains(leather)
+                    && IsOrdinaryLeatheryStuff(leather);
+
+                if ((settings == null || settings.protectMultiCategoryLeathers) && HasIncompatibleStuffCategory(leather))
                 {
-                    ProtectedLeathers.Add(leather);
+                    Protect(leather, "Leathery/Fabric以外のStuffCategoryを持つ特殊素材");
+                    continue;
+                }
+
+                if (!isHumanlikeOrdinaryLeather
+                    && (settings == null || settings.protectExtremeLeathers)
+                    && IsExtremeLeather(leather, targets))
+                {
+                    Protect(leather, "通常5革の性能範囲を大きく超える特殊革");
                 }
             }
         }
 
-        private static void ProtectByName(string defName)
+        private static void Protect(ThingDef def, string reason)
+        {
+            if (def == null)
+                return;
+
+            ProtectedLeathers.Add(def);
+            if (!ProtectionReasons.ContainsKey(def))
+                ProtectionReasons[def] = reason;
+        }
+
+        private static void ProtectByName(string defName, string reason)
         {
             if (string.IsNullOrWhiteSpace(defName))
                 return;
 
             ThingDef def = DefDatabase<ThingDef>.GetNamedSilentFail(defName);
             if (def != null)
-                ProtectedLeathers.Add(def);
+                Protect(def, reason);
         }
 
         private static void BuildReplacementMap(List<ThingDef> targets, ThingDef humanLeather)
@@ -224,7 +247,7 @@ namespace PrivateLeatherConsolidator
                 if ((settings == null || settings.mergeHumanlikeLeathersIntoHuman)
                     && humanLeather != null
                     && humanlikeOnlyLeathers.Contains(leather)
-                    && IsPlainLeatheryStuff(leather)
+                    && IsOrdinaryLeatheryStuff(leather)
                     && leather != humanLeather)
                 {
                     ReplacementMap[leather] = humanLeather;
@@ -264,7 +287,7 @@ namespace PrivateLeatherConsolidator
 
                 if (string.IsNullOrWhiteSpace(entry.target))
                 {
-                    ProtectedLeathers.Add(source);
+                    Protect(source, "overrideで保護");
                     ReplacementMap.Remove(source);
                     continue;
                 }
@@ -278,12 +301,13 @@ namespace PrivateLeatherConsolidator
 
                 if (source == target)
                 {
-                    ProtectedLeathers.Add(source);
+                    Protect(source, "overrideで自己指定＝保護");
                     ReplacementMap.Remove(source);
                     continue;
                 }
 
                 ProtectedLeathers.Remove(source);
+                ProtectionReasons.Remove(source);
                 ReplacementMap[source] = target;
             }
         }
@@ -311,7 +335,7 @@ namespace PrivateLeatherConsolidator
                 if (cycle)
                 {
                     Log.Warning($"[革統合] override/置換に循環を検出したため無効化します: {source.defName}");
-                    ProtectedLeathers.Add(source);
+                    Protect(source, "置換循環を検出");
                     continue;
                 }
 
@@ -540,25 +564,25 @@ namespace PrivateLeatherConsolidator
                 && def.stuffProps.categories.Any(c => c != null && c.defName == "Leathery");
         }
 
-        private static bool IsPlainLeatheryStuff(ThingDef def)
+        private static bool IsOrdinaryLeatheryStuff(ThingDef def)
         {
             if (def?.stuffProps?.categories == null)
                 return false;
 
             bool hasLeathery = def.stuffProps.categories.Any(c => c != null && c.defName == "Leathery");
-            bool hasOther = def.stuffProps.categories.Any(c => c != null && c.defName != "Leathery");
-            return hasLeathery && !hasOther;
+            bool onlyOrdinaryCategories = def.stuffProps.categories.All(c => c == null || c.defName == "Leathery" || c.defName == "Fabric");
+            return hasLeathery && onlyOrdinaryCategories;
         }
 
-        private static bool HasNonLeatherStuffCategory(ThingDef def)
+        private static bool HasIncompatibleStuffCategory(ThingDef def)
         {
             return def?.stuffProps?.categories != null
-                && def.stuffProps.categories.Any(c => c != null && c.defName != "Leathery");
+                && def.stuffProps.categories.Any(c => c != null && c.defName != "Leathery" && c.defName != "Fabric");
         }
 
-        private static bool IsExtremeLeather(ThingDef def)
+        private static bool IsExtremeLeather(ThingDef def, List<ThingDef> normalTargets)
         {
-            if (def?.stuffProps == null)
+            if (def?.stuffProps == null || normalTargets == null || normalTargets.Count == 0)
                 return false;
 
             float market = def.BaseMarketValue;
@@ -569,13 +593,28 @@ namespace PrivateLeatherConsolidator
             float heat = GetStuffPower(def, StatDefOf.StuffPower_Insulation_Heat, 0f);
             float hp = GetStuffFactor(def, StatDefOf.MaxHitPoints, 1f);
 
-            return market >= 25f
-                || sharp >= 2.4f
-                || blunt >= 1.0f
-                || heatArmor >= 1.0f
-                || cold >= 50f
-                || heat >= 40f
-                || hp >= 2.5f;
+            float maxMarket = normalTargets.Max(x => x.BaseMarketValue);
+            float maxSharp = normalTargets.Max(x => GetStuffPower(x, StatDefOf.StuffPower_Armor_Sharp, 0f));
+            float maxBlunt = normalTargets.Max(x => GetStuffPower(x, StatDefOf.StuffPower_Armor_Blunt, 0f));
+            float maxHeatArmor = normalTargets.Max(x => GetStuffPower(x, StatDefOf.StuffPower_Armor_Heat, 0f));
+            float maxCold = normalTargets.Max(x => GetStuffPower(x, StatDefOf.StuffPower_Insulation_Cold, 0f));
+            float maxHeat = normalTargets.Max(x => GetStuffPower(x, StatDefOf.StuffPower_Insulation_Heat, 0f));
+            float maxHp = normalTargets.Max(x => GetStuffFactor(x, StatDefOf.MaxHitPoints, 1f));
+
+            return AboveNormalEnvelope(market, maxMarket, 2.5f, 3f)
+                || AboveNormalEnvelope(sharp, maxSharp, 1.55f, 0.15f)
+                || AboveNormalEnvelope(blunt, maxBlunt, 1.75f, 0.10f)
+                || AboveNormalEnvelope(heatArmor, maxHeatArmor, 1.55f, 0.25f)
+                || AboveNormalEnvelope(cold, maxCold, 1.60f, 5f)
+                || AboveNormalEnvelope(heat, maxHeat, 1.60f, 5f)
+                || AboveNormalEnvelope(hp, maxHp, 1.60f, 0.15f);
+        }
+
+        private static bool AboveNormalEnvelope(float value, float normalMax, float multiplier, float margin)
+        {
+            if (normalMax <= 0f)
+                return value > margin;
+            return value > normalMax * multiplier + margin;
         }
 
         private static double LeatherDistance(ThingDef a, ThingDef b)
@@ -583,7 +622,7 @@ namespace PrivateLeatherConsolidator
             double score = 0d;
             score += NormalizedSq(GetStuffPower(a, StatDefOf.StuffPower_Armor_Sharp, 0f), GetStuffPower(b, StatDefOf.StuffPower_Armor_Sharp, 0f), 0.50, 1.30);
             score += NormalizedSq(GetStuffPower(a, StatDefOf.StuffPower_Armor_Blunt, 0f), GetStuffPower(b, StatDefOf.StuffPower_Armor_Blunt, 0f), 0.25, 0.70);
-            score += NormalizedSq(GetStuffPower(a, StatDefOf.StuffPower_Armor_Heat, 0f), GetStuffPower(b, StatDefOf.StuffPower_Armor_Heat, 0f), 0.25, 0.50);
+            score += NormalizedSq(GetStuffPower(a, StatDefOf.StuffPower_Armor_Heat, 0f), GetStuffPower(b, StatDefOf.StuffPower_Armor_Heat, 0f), 0.50, 0.50);
             score += NormalizedSq(GetStuffFactor(a, StatDefOf.MaxHitPoints, 1f), GetStuffFactor(b, StatDefOf.MaxHitPoints, 1f), 0.50, 1.00);
             score += NormalizedSq(GetStuffPower(a, StatDefOf.StuffPower_Insulation_Cold, 0f), GetStuffPower(b, StatDefOf.StuffPower_Insulation_Cold, 0f), 15.0, 0.80);
             score += NormalizedSq(GetStuffPower(a, StatDefOf.StuffPower_Insulation_Heat, 0f), GetStuffPower(b, StatDefOf.StuffPower_Insulation_Heat, 0f), 15.0, 0.80);
