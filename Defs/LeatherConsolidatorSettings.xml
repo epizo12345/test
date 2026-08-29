@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Defs>
+  <!--
+    Internal runtime bridge only.
+    User configuration is stored through RimWorld ModSettings and should be changed in the in-game mod options.
+  -->
   <PrivateLeatherConsolidator.LeatherConsolidatorSettingsDef>
-    <defName>LeatherConsolidator_DefaultSettings</defName>
+    <defName>LeatherConsolidator_RuntimeSettings</defName>
     <removeLeatheryCategoryFromMergedLeathers>true</removeLeatheryCategoryFromMergedLeathers>
     <mergeHumanlikeLeathersIntoHuman>true</mergeHumanlikeLeathersIntoHuman>
     <protectExtremeLeathers>true</protectExtremeLeathers>
@@ -12,14 +16,7 @@
     <migrateHeldRawLeatherStacks>true</migrateHeldRawLeatherStacks>
     <auditRemainingReferences>true</auditRemainingReferences>
     <verboseLog>true</verboseLog>
-    <alwaysKeep>
-      <li>Leather_Human</li>
-      <li>Leather_Thrumbo</li>
-      <li>Thrumbomane</li>
-      <li>Leather_Thrumbomane</li>
-      <li>Leather_Chitin</li>
-      <li>Leather_DragonScale</li>
-    </alwaysKeep>
+    <alwaysKeep />
     <overrides />
   </PrivateLeatherConsolidator.LeatherConsolidatorSettingsDef>
 </Defs>
