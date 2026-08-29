@@ -1,8 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Verse;
+using System.Reflection;
 using RimWorld;
+using Verse;
 
 namespace PrivateLeatherConsolidator
 {
@@ -12,6 +13,7 @@ namespace PrivateLeatherConsolidator
         public static readonly Dictionary<ThingDef, ThingDef> ReplacementMap = new Dictionary<ThingDef, ThingDef>();
         public static readonly HashSet<ThingDef> ProtectedLeathers = new HashSet<ThingDef>();
 
+        private static readonly Dictionary<ThingDef, HashSet<ThingDef>> ProducerRaces = new Dictionary<ThingDef, HashSet<ThingDef>>();
         private static LeatherConsolidatorSettingsDef settings;
         private static HashSet<ThingDef> animalLeathers;
         private static HashSet<ThingDef> humanlikeOnlyLeathers;
@@ -34,8 +36,12 @@ namespace PrivateLeatherConsolidator
         {
             try
             {
-                var allThings = DefDatabase<ThingDef>.AllDefsListForReading;
-                var allRecipes = DefDatabase<RecipeDef>.AllDefsListForReading;
+                ReplacementMap.Clear();
+                ProtectedLeathers.Clear();
+                ProducerRaces.Clear();
+
+                List<ThingDef> allThings = DefDatabase<ThingDef>.AllDefsListForReading;
+                List<RecipeDef> allRecipes = DefDatabase<RecipeDef>.AllDefsListForReading;
                 settings = DefDatabase<LeatherConsolidatorSettingsDef>.AllDefsListForReading.FirstOrDefault();
 
                 ThingDef light = DefDatabase<ThingDef>.GetNamedSilentFail("Leather_Light");
@@ -45,7 +51,7 @@ namespace PrivateLeatherConsolidator
                 ThingDef lizard = DefDatabase<ThingDef>.GetNamedSilentFail("Leather_Lizard");
                 ThingDef human = DefDatabase<ThingDef>.GetNamedSilentFail("Leather_Human");
 
-                var targets = new List<ThingDef> { light, plain, heavy, bird, lizard }
+                List<ThingDef> targets = new List<ThingDef> { light, plain, heavy, bird, lizard }
                     .Where(x => x != null)
                     .Distinct()
                     .ToList();
@@ -56,33 +62,38 @@ namespace PrivateLeatherConsolidator
                     return;
                 }
 
-                var raceDefsWithLeather = allThings
-                    .Where(x => x?.race?.leatherDef != null)
-                    .ToList();
-
-                animalLeathers = new HashSet<ThingDef>(raceDefsWithLeather.Select(x => x.race.leatherDef));
-
-                humanlikeOnlyLeathers = new HashSet<ThingDef>(raceDefsWithLeather
-                    .GroupBy(x => x.race.leatherDef)
-                    .Where(g => g.All(raceDef => raceDef.race.Humanlike))
-                    .Select(g => g.Key));
+                CollectLeatherProducers(allThings);
+                animalLeathers = new HashSet<ThingDef>(ProducerRaces.Keys);
+                humanlikeOnlyLeathers = new HashSet<ThingDef>(ProducerRaces
+                    .Where(pair => pair.Value.Count > 0 && pair.Value.All(raceDef => raceDef?.race?.Humanlike == true))
+                    .Select(pair => pair.Key));
 
                 BuildProtectedSet(targets, human);
                 BuildReplacementMap(targets, human);
+                AddLegacyMappings();
                 ApplyOverrides();
+                NormalizeReplacementMap();
 
                 int animalCount = RemapAnimalLeatherDefs(allThings);
                 int recipeCount = RemapRecipes(allRecipes);
-                int categoryCount = HideMergedLeathersFromGeneralLeatherFilters();
+                int directCount = RemapKnownDirectReferences(allThings);
+                int categoryCount = MakeMergedLeathersInert();
+
+                ResetStuffCaches();
+
+                int remainingRefs = 0;
+                if (settings == null || settings.auditRemainingReferences)
+                    remainingRefs = AuditRemainingKnownReferences(allThings, allRecipes);
+
                 int humanlikeCount = human != null
                     ? ReplacementMap.Count(x => x.Value == human && humanlikeOnlyLeathers.Contains(x.Key))
                     : 0;
 
-                Log.Message($"[革統合] 完了: 動物革 {animalLeathers.Count} / Humanlike専用革 {humanlikeOnlyLeathers.Count} / 人皮統合 {humanlikeCount} / 統合 {ReplacementMap.Count} / 保護 {ProtectedLeathers.Count} / 動物変更 {animalCount} / レシピ補正 {recipeCount} / 旧革Leathery除外 {categoryCount}");
+                Log.Message($"[革統合] 完了: 生産革 {animalLeathers.Count} / Humanlike専用革 {humanlikeOnlyLeathers.Count} / 人皮統合 {humanlikeCount} / 統合 {ReplacementMap.Count} / 保護 {ProtectedLeathers.Count} / 種族変更 {animalCount} / レシピ補正 {recipeCount} / 直接参照補正 {directCount} / 旧革Leathery除外 {categoryCount} / 未解決既知参照 {remainingRefs}");
 
                 if (settings == null || settings.verboseLog)
                 {
-                    foreach (var pair in ReplacementMap.OrderBy(x => x.Key.defName))
+                    foreach (KeyValuePair<ThingDef, ThingDef> pair in ReplacementMap.OrderBy(x => x.Key.defName))
                     {
                         string reason = human != null && pair.Value == human && humanlikeOnlyLeathers.Contains(pair.Key)
                             ? " [Humanlike専用革→人皮]"
@@ -97,17 +108,65 @@ namespace PrivateLeatherConsolidator
             }
         }
 
+        private static void CollectLeatherProducers(List<ThingDef> allThings)
+        {
+            foreach (ThingDef raceDef in allThings)
+            {
+                if (raceDef?.race == null)
+                    continue;
+
+                AddProducer(raceDef.race.leatherDef, raceDef);
+
+                if (raceDef.butcherProducts != null)
+                {
+                    foreach (ThingDefCountClass product in raceDef.butcherProducts)
+                    {
+                        if (IsLeatheryStuff(product?.thingDef))
+                            AddProducer(product.thingDef, raceDef);
+                    }
+                }
+
+                if (raceDef.comps == null)
+                    continue;
+
+                foreach (CompProperties comp in raceDef.comps)
+                {
+                    if (comp is CompProperties_Shearable shearable && IsLeatheryStuff(shearable.woolDef))
+                        AddProducer(shearable.woolDef, raceDef);
+
+                    ThingDef scaleDef = GetThingDefMember(comp, "scaleDef");
+                    if (IsLeatheryStuff(scaleDef))
+                        AddProducer(scaleDef, raceDef);
+                }
+            }
+        }
+
+        private static void AddProducer(ThingDef leather, ThingDef raceDef)
+        {
+            if (leather == null || raceDef == null)
+                return;
+
+            if (!ProducerRaces.TryGetValue(leather, out HashSet<ThingDef> races))
+            {
+                races = new HashSet<ThingDef>();
+                ProducerRaces.Add(leather, races);
+            }
+            races.Add(raceDef);
+        }
+
         private static void BuildProtectedSet(List<ThingDef> targets, ThingDef humanLeather)
         {
-            foreach (ThingDef t in targets)
-                ProtectedLeathers.Add(t);
+            foreach (ThingDef target in targets)
+                ProtectedLeathers.Add(target);
 
             string[] defaultProtected =
             {
                 "Leather_Human",
                 "Leather_Thrumbo",
                 "Thrumbomane",
-                "Leather_Thrumbomane"
+                "Leather_Thrumbomane",
+                "Leather_Chitin",
+                "Leather_DragonScale"
             };
 
             foreach (string name in defaultProtected)
@@ -121,7 +180,7 @@ namespace PrivateLeatherConsolidator
 
             foreach (ThingDef leather in animalLeathers)
             {
-                if (leather == null || leather.stuffProps == null)
+                if (leather?.stuffProps == null)
                     continue;
 
                 bool isHumanlikePlainLeather = (settings == null || settings.mergeHumanlikeLeathersIntoHuman)
@@ -159,9 +218,7 @@ namespace PrivateLeatherConsolidator
         {
             foreach (ThingDef leather in animalLeathers)
             {
-                if (!IsMergeCandidate(leather))
-                    continue;
-                if (ProtectedLeathers.Contains(leather))
+                if (!IsMergeCandidate(leather) || ProtectedLeathers.Contains(leather))
                     continue;
 
                 if ((settings == null || settings.mergeHumanlikeLeathersIntoHuman)
@@ -178,6 +235,14 @@ namespace PrivateLeatherConsolidator
                 if (closest != null && closest != leather)
                     ReplacementMap[leather] = closest;
             }
+        }
+
+        private static void AddLegacyMappings()
+        {
+            ThingDef legacyLegend = DefDatabase<ThingDef>.GetNamedSilentFail("Leather_Legend");
+            ThingDef thrumbo = DefDatabase<ThingDef>.GetNamedSilentFail("Leather_Thrumbo");
+            if (legacyLegend != null && thrumbo != null && !ProtectedLeathers.Contains(legacyLegend))
+                ReplacementMap[legacyLegend] = thrumbo;
         }
 
         private static void ApplyOverrides()
@@ -223,6 +288,42 @@ namespace PrivateLeatherConsolidator
             }
         }
 
+        private static void NormalizeReplacementMap()
+        {
+            Dictionary<ThingDef, ThingDef> normalized = new Dictionary<ThingDef, ThingDef>();
+
+            foreach (ThingDef source in ReplacementMap.Keys.ToList())
+            {
+                HashSet<ThingDef> visited = new HashSet<ThingDef>();
+                ThingDef current = source;
+                bool cycle = false;
+
+                while (ReplacementMap.TryGetValue(current, out ThingDef next))
+                {
+                    if (!visited.Add(current) || visited.Contains(next))
+                    {
+                        cycle = true;
+                        break;
+                    }
+                    current = next;
+                }
+
+                if (cycle)
+                {
+                    Log.Warning($"[革統合] override/置換に循環を検出したため無効化します: {source.defName}");
+                    ProtectedLeathers.Add(source);
+                    continue;
+                }
+
+                if (current != null && current != source)
+                    normalized[source] = current;
+            }
+
+            ReplacementMap.Clear();
+            foreach (KeyValuePair<ThingDef, ThingDef> pair in normalized)
+                ReplacementMap[pair.Key] = pair.Value;
+        }
+
         private static int RemapAnimalLeatherDefs(List<ThingDef> allThings)
         {
             int count = 0;
@@ -231,8 +332,7 @@ namespace PrivateLeatherConsolidator
                 if (animal?.race?.leatherDef == null)
                     continue;
 
-                ThingDef oldLeather = animal.race.leatherDef;
-                if (ReplacementMap.TryGetValue(oldLeather, out ThingDef replacement))
+                if (TryGetReplacement(animal.race.leatherDef, out ThingDef replacement))
                 {
                     animal.race.leatherDef = replacement;
                     count++;
@@ -252,8 +352,7 @@ namespace PrivateLeatherConsolidator
                 {
                     foreach (IngredientCount ingredient in recipe.ingredients)
                     {
-                        ThingFilter filter = ingredient?.filter;
-                        if (filter != null && RemapFilter(filter))
+                        if (ingredient?.filter != null && RemapFilter(ingredient.filter))
                             recipeChanged = true;
                     }
                 }
@@ -262,9 +361,97 @@ namespace PrivateLeatherConsolidator
                     recipeChanged = true;
                 if (recipe.defaultIngredientFilter != null && RemapFilter(recipe.defaultIngredientFilter))
                     recipeChanged = true;
+                if (RemapThingDefCountList(recipe.products))
+                    recipeChanged = true;
 
                 if (recipeChanged)
                     changed++;
+            }
+            return changed;
+        }
+
+        private static int RemapKnownDirectReferences(List<ThingDef> allThings)
+        {
+            int changed = 0;
+
+            foreach (ThingDef def in allThings)
+            {
+                if (def == null)
+                    continue;
+
+                if (TryGetReplacement(def.defaultStuff, out ThingDef defaultStuff))
+                {
+                    def.defaultStuff = defaultStuff;
+                    changed++;
+                }
+
+                if (RemapThingDefCountList(def.costList)) changed++;
+                if (def.costListForDifficulty != null && RemapThingDefCountList(def.costListForDifficulty.costList)) changed++;
+                if (RemapThingDefCountList(def.butcherProducts)) changed++;
+                if (RemapThingDefCountList(def.smeltProducts)) changed++;
+                if (RemapThingDefCountList(def.killedLeavings)) changed++;
+                if (RemapThingDefCountList(def.killedLeavingsPlayerHostile)) changed++;
+                if (RemapThingDefCountRangeList(def.killedLeavingsRanges)) changed++;
+
+                if (def.comps == null)
+                    continue;
+
+                foreach (CompProperties comp in def.comps)
+                {
+                    if (comp is CompProperties_Shearable shearable
+                        && TryGetReplacement(shearable.woolDef, out ThingDef replacementWool))
+                    {
+                        shearable.woolDef = replacementWool;
+                        changed++;
+                    }
+
+                    if (RemapThingDefMember(comp, "scaleDef"))
+                        changed++;
+                }
+            }
+
+            return changed;
+        }
+
+        private static bool RemapThingDefCountList(List<ThingDefCountClass> list)
+        {
+            if (list == null)
+                return false;
+
+            bool changed = false;
+            foreach (ThingDefCountClass entry in list)
+            {
+                if (entry == null)
+                    continue;
+
+                if (TryGetReplacement(entry.thingDef, out ThingDef replacementDef))
+                {
+                    entry.thingDef = replacementDef;
+                    changed = true;
+                }
+
+                if (TryGetReplacement(entry.stuff, out ThingDef replacementStuff))
+                {
+                    entry.stuff = replacementStuff;
+                    changed = true;
+                }
+            }
+            return changed;
+        }
+
+        private static bool RemapThingDefCountRangeList(List<ThingDefCountRangeClass> list)
+        {
+            if (list == null)
+                return false;
+
+            bool changed = false;
+            foreach (ThingDefCountRangeClass entry in list)
+            {
+                if (entry != null && TryGetReplacement(entry.thingDef, out ThingDef replacement))
+                {
+                    entry.thingDef = replacement;
+                    changed = true;
+                }
             }
             return changed;
         }
@@ -275,7 +462,7 @@ namespace PrivateLeatherConsolidator
                 return false;
 
             bool changed = false;
-            foreach (var pair in ReplacementMap)
+            foreach (KeyValuePair<ThingDef, ThingDef> pair in ReplacementMap)
             {
                 if (!filter.Allows(pair.Key))
                     continue;
@@ -287,36 +474,70 @@ namespace PrivateLeatherConsolidator
             return changed;
         }
 
-        private static int HideMergedLeathersFromGeneralLeatherFilters()
+        public static bool TryGetReplacement(ThingDef source, out ThingDef replacement)
         {
-            if (settings != null && !settings.removeLeatheryCategoryFromMergedLeathers)
-                return 0;
+            if (source != null && ReplacementMap.TryGetValue(source, out replacement) && replacement != null && replacement != source)
+                return true;
 
+            replacement = null;
+            return false;
+        }
+
+        private static int MakeMergedLeathersInert()
+        {
             StuffCategoryDef leathery = DefDatabase<StuffCategoryDef>.GetNamedSilentFail("Leathery");
-            if (leathery == null)
-            {
-                Log.Warning("[革統合] StuffCategoryDef 'Leathery' が見つからないため旧革カテゴリ除外を省略します。");
-                return 0;
-            }
+            int removedCategories = 0;
 
-            int count = 0;
             foreach (ThingDef oldLeather in ReplacementMap.Keys)
             {
-                if (oldLeather?.stuffProps?.categories == null)
+                if (oldLeather?.stuffProps == null)
                     continue;
 
-                if (oldLeather.stuffProps.categories.Remove(leathery))
-                    count++;
+                oldLeather.stuffProps.allowedInStuffGeneration = false;
+                oldLeather.generateAllowChance = 0f;
+
+                if ((settings == null || settings.removeLeatheryCategoryFromMergedLeathers)
+                    && leathery != null
+                    && oldLeather.stuffProps.categories != null
+                    && oldLeather.stuffProps.categories.Remove(leathery))
+                {
+                    removedCategories++;
+                }
             }
-            return count;
+
+            if ((settings == null || settings.removeLeatheryCategoryFromMergedLeathers) && leathery == null)
+                Log.Warning("[革統合] StuffCategoryDef 'Leathery' が見つからないため旧革カテゴリ除外を省略します。");
+
+            return removedCategories;
+        }
+
+        private static void ResetStuffCaches()
+        {
+            try
+            {
+                GenStuff.ResetStaticData();
+                PawnApparelGenerator.Reset();
+                PawnWeaponGenerator.Reset();
+            }
+            catch (Exception ex)
+            {
+                Log.Warning($"[革統合] 素材生成キャッシュの再構築に失敗: {ex.Message}");
+            }
         }
 
         private static bool IsMergeCandidate(ThingDef def)
         {
-            if (def == null || def.stuffProps == null)
-                return false;
+            return def != null
+                && def.stuffProps != null
+                && animalLeathers != null
+                && animalLeathers.Contains(def)
+                && IsLeatheryStuff(def);
+        }
 
-            return animalLeathers != null && animalLeathers.Contains(def);
+        private static bool IsLeatheryStuff(ThingDef def)
+        {
+            return def?.stuffProps?.categories != null
+                && def.stuffProps.categories.Any(c => c != null && c.defName == "Leathery");
         }
 
         private static bool IsPlainLeatheryStuff(ThingDef def)
@@ -331,43 +552,58 @@ namespace PrivateLeatherConsolidator
 
         private static bool HasNonLeatherStuffCategory(ThingDef def)
         {
-            if (def?.stuffProps?.categories == null)
-                return false;
-
-            return def.stuffProps.categories.Any(c => c != null && c.defName != "Leathery");
+            return def?.stuffProps?.categories != null
+                && def.stuffProps.categories.Any(c => c != null && c.defName != "Leathery");
         }
 
         private static bool IsExtremeLeather(ThingDef def)
         {
-            if (def == null || def.stuffProps == null)
+            if (def?.stuffProps == null)
                 return false;
 
             float market = def.BaseMarketValue;
-            float sharp = GetStuffFactor(def, StatDefOf.ArmorRating_Sharp, 1f);
-            float blunt = GetStuffFactor(def, StatDefOf.ArmorRating_Blunt, 1f);
-            float heatArmor = GetStuffFactor(def, StatDefOf.ArmorRating_Heat, 1f);
+            float sharp = GetStuffPower(def, StatDefOf.StuffPower_Armor_Sharp, 0f);
+            float blunt = GetStuffPower(def, StatDefOf.StuffPower_Armor_Blunt, 0f);
+            float heatArmor = GetStuffPower(def, StatDefOf.StuffPower_Armor_Heat, 0f);
+            float cold = GetStuffPower(def, StatDefOf.StuffPower_Insulation_Cold, 0f);
+            float heat = GetStuffPower(def, StatDefOf.StuffPower_Insulation_Heat, 0f);
             float hp = GetStuffFactor(def, StatDefOf.MaxHitPoints, 1f);
 
-            return market >= 25f || sharp >= 2.4f || blunt >= 2.0f || heatArmor >= 2.0f || hp >= 2.5f;
+            return market >= 25f
+                || sharp >= 2.4f
+                || blunt >= 1.0f
+                || heatArmor >= 1.0f
+                || cold >= 50f
+                || heat >= 40f
+                || hp >= 2.5f;
         }
 
         private static double LeatherDistance(ThingDef a, ThingDef b)
         {
             double score = 0d;
-            score += SqNorm(GetStuffFactor(a, StatDefOf.ArmorRating_Sharp, 1f), GetStuffFactor(b, StatDefOf.ArmorRating_Sharp, 1f), 1.00);
-            score += SqNorm(GetStuffFactor(a, StatDefOf.ArmorRating_Blunt, 1f), GetStuffFactor(b, StatDefOf.ArmorRating_Blunt, 1f), 0.60);
-            score += SqNorm(GetStuffFactor(a, StatDefOf.ArmorRating_Heat, 1f), GetStuffFactor(b, StatDefOf.ArmorRating_Heat, 1f), 0.40);
-            score += SqNorm(GetStuffFactor(a, StatDefOf.MaxHitPoints, 1f), GetStuffFactor(b, StatDefOf.MaxHitPoints, 1f), 0.75);
-            score += SqNorm(GetStuffFactor(a, StatDefOf.Insulation_Cold, 0f), GetStuffFactor(b, StatDefOf.Insulation_Cold, 0f), 0.004);
-            score += SqNorm(GetStuffFactor(a, StatDefOf.Insulation_Heat, 0f), GetStuffFactor(b, StatDefOf.Insulation_Heat, 0f), 0.006);
-            score += SqNorm(a.BaseMarketValue, b.BaseMarketValue, 0.08);
+            score += NormalizedSq(GetStuffPower(a, StatDefOf.StuffPower_Armor_Sharp, 0f), GetStuffPower(b, StatDefOf.StuffPower_Armor_Sharp, 0f), 0.50, 1.30);
+            score += NormalizedSq(GetStuffPower(a, StatDefOf.StuffPower_Armor_Blunt, 0f), GetStuffPower(b, StatDefOf.StuffPower_Armor_Blunt, 0f), 0.25, 0.70);
+            score += NormalizedSq(GetStuffPower(a, StatDefOf.StuffPower_Armor_Heat, 0f), GetStuffPower(b, StatDefOf.StuffPower_Armor_Heat, 0f), 0.25, 0.50);
+            score += NormalizedSq(GetStuffFactor(a, StatDefOf.MaxHitPoints, 1f), GetStuffFactor(b, StatDefOf.MaxHitPoints, 1f), 0.50, 1.00);
+            score += NormalizedSq(GetStuffPower(a, StatDefOf.StuffPower_Insulation_Cold, 0f), GetStuffPower(b, StatDefOf.StuffPower_Insulation_Cold, 0f), 15.0, 0.80);
+            score += NormalizedSq(GetStuffPower(a, StatDefOf.StuffPower_Insulation_Heat, 0f), GetStuffPower(b, StatDefOf.StuffPower_Insulation_Heat, 0f), 15.0, 0.80);
+            score += NormalizedSq(a.BaseMarketValue, b.BaseMarketValue, 5.0, 0.50);
             return score;
         }
 
-        private static double SqNorm(float a, float b, double weight)
+        private static double NormalizedSq(float a, float b, double scale, double weight)
         {
-            double d = a - b;
+            double d = (a - b) / Math.Max(scale, 0.0001);
             return d * d * weight;
+        }
+
+        private static float GetStuffPower(ThingDef def, StatDef stat, float fallback)
+        {
+            if (def?.statBases == null || stat == null)
+                return fallback;
+
+            StatModifier modifier = def.statBases.FirstOrDefault(x => x.stat == stat);
+            return modifier != null ? modifier.value : fallback;
         }
 
         private static float GetStuffFactor(ThingDef def, StatDef stat, float fallback)
@@ -377,6 +613,135 @@ namespace PrivateLeatherConsolidator
 
             StatModifier modifier = def.stuffProps.statFactors.FirstOrDefault(x => x.stat == stat);
             return modifier != null ? modifier.value : fallback;
+        }
+
+        private static ThingDef GetThingDefMember(object obj, string memberName)
+        {
+            if (obj == null)
+                return null;
+
+            Type type = obj.GetType();
+            FieldInfo field = type.GetField(memberName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (field != null && typeof(ThingDef).IsAssignableFrom(field.FieldType))
+                return field.GetValue(obj) as ThingDef;
+
+            PropertyInfo property = type.GetProperty(memberName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (property != null && property.CanRead && typeof(ThingDef).IsAssignableFrom(property.PropertyType))
+                return property.GetValue(obj, null) as ThingDef;
+
+            return null;
+        }
+
+        private static bool RemapThingDefMember(object obj, string memberName)
+        {
+            if (obj == null)
+                return false;
+
+            Type type = obj.GetType();
+            FieldInfo field = type.GetField(memberName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (field != null && typeof(ThingDef).IsAssignableFrom(field.FieldType))
+            {
+                ThingDef oldValue = field.GetValue(obj) as ThingDef;
+                if (TryGetReplacement(oldValue, out ThingDef replacement))
+                {
+                    field.SetValue(obj, replacement);
+                    return true;
+                }
+            }
+
+            PropertyInfo property = type.GetProperty(memberName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (property != null && property.CanRead && property.CanWrite && typeof(ThingDef).IsAssignableFrom(property.PropertyType))
+            {
+                ThingDef oldValue = property.GetValue(obj, null) as ThingDef;
+                if (TryGetReplacement(oldValue, out ThingDef replacement))
+                {
+                    property.SetValue(obj, replacement, null);
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static int AuditRemainingKnownReferences(List<ThingDef> allThings, List<RecipeDef> recipes)
+        {
+            int total = 0;
+            int logged = 0;
+            const int logLimit = 50;
+
+            Action<string, ThingDef> report = (where, value) =>
+            {
+                if (value == null || !ReplacementMap.ContainsKey(value))
+                    return;
+
+                total++;
+                if (logged < logLimit)
+                {
+                    Log.Warning($"[革統合][未解決参照] {where} -> {value.defName}");
+                    logged++;
+                }
+            };
+
+            foreach (RecipeDef recipe in recipes)
+            {
+                if (recipe?.products != null)
+                {
+                    foreach (ThingDefCountClass product in recipe.products)
+                    {
+                        report($"RecipeDef {recipe.defName}.products", product?.thingDef);
+                        report($"RecipeDef {recipe.defName}.products.stuff", product?.stuff);
+                    }
+                }
+            }
+
+            foreach (ThingDef def in allThings)
+            {
+                if (def == null)
+                    continue;
+
+                report($"ThingDef {def.defName}.race.leatherDef", def.race?.leatherDef);
+                report($"ThingDef {def.defName}.defaultStuff", def.defaultStuff);
+                AuditCountList(def.costList, $"ThingDef {def.defName}.costList", report);
+                if (def.costListForDifficulty != null)
+                    AuditCountList(def.costListForDifficulty.costList, $"ThingDef {def.defName}.costListForDifficulty", report);
+                AuditCountList(def.butcherProducts, $"ThingDef {def.defName}.butcherProducts", report);
+                AuditCountList(def.smeltProducts, $"ThingDef {def.defName}.smeltProducts", report);
+                AuditCountList(def.killedLeavings, $"ThingDef {def.defName}.killedLeavings", report);
+                AuditCountList(def.killedLeavingsPlayerHostile, $"ThingDef {def.defName}.killedLeavingsPlayerHostile", report);
+
+                if (def.killedLeavingsRanges != null)
+                {
+                    foreach (ThingDefCountRangeClass entry in def.killedLeavingsRanges)
+                        report($"ThingDef {def.defName}.killedLeavingsRanges", entry?.thingDef);
+                }
+
+                if (def.comps == null)
+                    continue;
+
+                foreach (CompProperties comp in def.comps)
+                {
+                    if (comp is CompProperties_Shearable shearable)
+                        report($"ThingDef {def.defName}.CompShearable.woolDef", shearable.woolDef);
+                    report($"ThingDef {def.defName}.{comp?.GetType().Name}.scaleDef", GetThingDefMember(comp, "scaleDef"));
+                }
+            }
+
+            if (total > logged)
+                Log.Warning($"[革統合][未解決参照] ほか {total - logged} 件（ログ上限 {logLimit} 件）");
+
+            return total;
+        }
+
+        private static void AuditCountList(List<ThingDefCountClass> list, string where, Action<string, ThingDef> report)
+        {
+            if (list == null)
+                return;
+
+            foreach (ThingDefCountClass entry in list)
+            {
+                report(where, entry?.thingDef);
+                report(where + ".stuff", entry?.stuff);
+            }
         }
     }
 }
