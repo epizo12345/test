@@ -3,6 +3,7 @@
   <PrivateLeatherConsolidator.LeatherConsolidatorSettingsDef>
     <defName>LeatherConsolidator_DefaultSettings</defName>
     <removeLeatheryCategoryFromMergedLeathers>true</removeLeatheryCategoryFromMergedLeathers>
+    <mergeHumanlikeLeathersIntoHuman>true</mergeHumanlikeLeathersIntoHuman>
     <protectExtremeLeathers>true</protectExtremeLeathers>
     <protectMultiCategoryLeathers>true</protectMultiCategoryLeathers>
     <verboseLog>true</verboseLog>
