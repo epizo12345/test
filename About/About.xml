@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ModMetaData>
+  <name>革統合 - 1.6</name>
+  <author>epizo12345</author>
+  <packageId>epizo12345.LeatherConsolidator</packageId>
+  <supportedVersions>
+    <li>1.6</li>
+  </supportedVersions>
+  <description>RimWorld 1.6専用。MODで増えた一般的な革を既存の少数の革へ統合し、特定革指定レシピも統合先へ補正します。人皮・スランボ系・特殊性能の革は保護します。</description>
+</ModMetaData>
