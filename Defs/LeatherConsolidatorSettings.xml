@@ -9,12 +9,16 @@
     <enableThingMakerFallback>true</enableThingMakerFallback>
     <migrateExistingBills>true</migrateExistingBills>
     <migrateExistingRawLeatherStacks>true</migrateExistingRawLeatherStacks>
+    <migrateHeldRawLeatherStacks>true</migrateHeldRawLeatherStacks>
+    <auditRemainingReferences>true</auditRemainingReferences>
     <verboseLog>true</verboseLog>
     <alwaysKeep>
       <li>Leather_Human</li>
       <li>Leather_Thrumbo</li>
       <li>Thrumbomane</li>
       <li>Leather_Thrumbomane</li>
+      <li>Leather_Chitin</li>
+      <li>Leather_DragonScale</li>
     </alwaysKeep>
     <overrides />
   </PrivateLeatherConsolidator.LeatherConsolidatorSettingsDef>
