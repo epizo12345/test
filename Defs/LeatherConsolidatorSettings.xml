@@ -6,6 +6,9 @@
     <mergeHumanlikeLeathersIntoHuman>true</mergeHumanlikeLeathersIntoHuman>
     <protectExtremeLeathers>true</protectExtremeLeathers>
     <protectMultiCategoryLeathers>true</protectMultiCategoryLeathers>
+    <enableThingMakerFallback>true</enableThingMakerFallback>
+    <migrateExistingBills>true</migrateExistingBills>
+    <migrateExistingRawLeatherStacks>true</migrateExistingRawLeatherStacks>
     <verboseLog>true</verboseLog>
     <alwaysKeep>
       <li>Leather_Human</li>
