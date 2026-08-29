@@ -23,8 +23,7 @@ jobs:
         run: |
           $files = @(
             'About/About.xml',
-            'Defs/LeatherConsolidatorSettings.xml',
-            'Defs/LegacyOptimizationLeathers.xml'
+            'Defs/LeatherConsolidatorSettings.xml'
           )
           foreach ($file in $files) {
             try {
@@ -55,7 +54,6 @@ jobs:
           $required = @(
             'artifact/LeatherConsolidator/About/About.xml',
             'artifact/LeatherConsolidator/Defs/LeatherConsolidatorSettings.xml',
-            'artifact/LeatherConsolidator/Defs/LegacyOptimizationLeathers.xml',
             'artifact/LeatherConsolidator/Assemblies/LeatherConsolidator.dll'
           )
           foreach ($file in $required) {
